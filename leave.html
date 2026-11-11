@@ -68,6 +68,10 @@ main{padding:22px;max-width:1700px;margin:0 auto}
 /* tables */
 .tblwrap{overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:12px;max-height:calc(100vh - 230px)}
 table.grid{border-collapse:separate;border-spacing:0;width:100%;font-variant-numeric:tabular-nums}
+.tblwrap.full{overflow:visible;max-height:none}
+.tblwrap.full .grid th{top:var(--hdr,94px)}
+.tblwrap.full .grid thead th:first-child{border-top-left-radius:12px}.tblwrap.full .grid thead th:last-child{border-top-right-radius:12px}
+.cnt{color:var(--deep);font-size:13px}
 .grid th{background:var(--soft);font-weight:700;font-size:12.5px;color:#34504D;padding:8px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2;white-space:nowrap}
 .grid td{padding:7px 6px;border-bottom:1px solid #EEF2F1;text-align:center;white-space:nowrap}
 .grid .l{text-align:left;padding-left:12px} .grid td.t{white-space:normal;min-width:260px;max-width:520px;font-size:13px}
@@ -76,8 +80,6 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-variant-num
 .grid .b{font-weight:700} .grid .m{color:#36514E;font-size:12.5px;min-width:34px}
 .grid td.empty,.empty{color:var(--sub);text-align:center;padding:36px;white-space:normal}
 .empty.ok{color:var(--deep);font-weight:600}
-.dash td:first-child,.dash th:first-child{position:sticky;left:0;background:#fff;z-index:1}
-.dash th:first-child{background:var(--soft);z-index:3}
 sup{color:var(--gold);font-weight:800;margin-left:2px}
 .adj{background:var(--goldbg);padding:1px 6px;border-radius:5px;font-weight:600}
 .grid.list td{text-align:center} .grid.list td.l{text-align:left}
@@ -192,7 +194,7 @@ td.big{font-size:18px;color:var(--deep)}
     </div>
     <nav id="tabs">
       <button data-tab="dash">연차 현황</button>
-      <button data-tab="month">월별 근태</button>
+      <button data-tab="month">월별 연차이력</button>
       <button data-tab="person">직원별 이력</button>
       <button data-tab="upload">연차반영 업로드</button>
       <button data-tab="ack">월차 반영 체크<span id="ackBadge" hidden></span></button>
@@ -209,6 +211,8 @@ td.big{font-size:18px;color:var(--deep)}
 <div id="busy"><i></i><span id="busyMsg">처리 중</span></div>
 
 <script>
+function setHdr(){const t=document.querySelector(".top");if(t)document.documentElement.style.setProperty("--hdr",t.offsetHeight+"px");}
+window.addEventListener("resize",setHdr);
 
 /* ===== 휴가 종류 ===== */
 const KINDS = {
@@ -480,7 +484,7 @@ $('#asOf').onchange=e=>{ S.asOf=e.target.value; render(); };
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{ S.tab=b.dataset.tab; render(); });
 $('#exportBtn').onclick=()=>exportYear(S.year);
 
-function render(){
+function render(){ setHdr();
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab));
   const pend=activeEmps().filter(e=>pendingMonthly(e).length).length;
   $('#ackBadge').textContent=pend||''; $('#ackBadge').hidden=!pend;
@@ -489,32 +493,38 @@ function render(){
 }
 
 /* ================= 1. 연차 현황 ================= */
-function renderDash(v){
-  const Y=S.year, rows=activeEmps().filter(e=>e.hire && +e.hire.slice(0,4)<=Y);
-  const depts=[...new Set(rows.map(e=>e.dept))].sort();
-  const q=S.search.trim();
-  const list=rows.filter(e=>(!S.dept||e.dept===S.dept)&&(!q||e.name.includes(q)||String(e.no).includes(q)));
-  let tot={avail:0,used:0}, over=0;
-  const body=list.map(e=>{ const s=sumOf(e); tot.avail+=s.avail; tot.used+=s.used; if(s.remain<0) over++;
-    return `<tr><td class="l"><a href="#" onclick="goPerson('${e.id}');return false">${esc(e.name)}</a><small>${esc(e.no)}</small></td><td class="l">${esc(e.dept)}</td><td>${esc(e.rank)}</td>
+function dashRow(e){ const Y=S.year, s=sumOf(e);
+  return `<tr><td class="l"><a href="#" onclick="goPerson('${e.id}');return false">${esc(e.name)}</a><small>${esc(e.no)}</small></td><td class="l">${esc(e.dept)}</td><td>${esc(e.rank)}</td>
     <td>${e.hire}</td><td>${s.N}년차${s.old?'<sup title="2017.5.29 이전 입사자 계산방식">舊</sup>':''}</td>
     <td>${s.carry?num(s.carry):''}</td><td>${s.monthly?num(s.monthly):''}</td><td>${s.grant?num(s.grant):''}</td>
     <td>${s.adj?`<span class="adj" title="${esc(e.adj?.[Y]?.memo||'')}">${s.adj>0?'+':''}${num(s.adj)}</span>`:''}</td>
     <td class="b">${num(s.avail)}</td>${s.months.map(m=>`<td class="m">${m?num(m):''}</td>`).join('')}
-    <td class="b">${num(s.used)}</td><td class="b ${s.remain<0?'neg':''}">${s.remain<0?'초과 '+num(-s.remain):num(s.remain)}</td><td>${num(s.payRemain)}</td></tr>`; }).join('');
+    <td class="b">${num(s.used)}</td><td class="b ${s.remain<0?'neg':''}">${s.remain<0?'초과 '+num(-s.remain):num(s.remain)}</td><td>${num(s.payRemain)}</td></tr>`; }
+const dashRowsAll = () => activeEmps().filter(e=>e.hire && +e.hire.slice(0,4)<=S.year);
+function renderDashBody(){
+  const q=S.search.trim(), all=dashRowsAll();
+  const list=all.filter(e=>(!S.dept||e.dept===S.dept)&&(!q||e.name.includes(q)||String(e.no).includes(q)));
+  $('#dashBody').innerHTML = list.map(dashRow).join('') || `<tr><td colspan="25" class="empty">${all.length?'검색 결과가 없습니다.':'등록된 직원이 없습니다. <b>설정</b> 탭에서 기존 관리대장을 불러오면 전체 명단이 여기에 표시돼요.'}</td></tr>`;
+  $('#dashCount').textContent = list.length===all.length ? `${all.length}명` : `${list.length} / ${all.length}명`;
+}
+function renderDash(v){
+  const Y=S.year, rows=dashRowsAll();
+  const depts=[...new Set(rows.map(e=>e.dept))].sort();
+  let used=0, over=0; rows.forEach(e=>{ const s=sumOf(e); used+=s.used; if(s.remain<0) over++; });
   const last=lastUploads(1)[0];
   v.innerHTML=`
   <section class="hero">
     <div><h2>${Y}년 연차 현황</h2><p>회계일(1/1) 기준 · 기준일 ${asOfFor(Y)}</p></div>
-    <dl class="stats"><div><dt>재직 인원</dt><dd>${rows.length}</dd></div><div><dt>사용 합계</dt><dd>${num(tot.used)}<small>일</small></dd></div>
+    <dl class="stats"><div><dt>재직 인원</dt><dd>${rows.length}</dd></div><div><dt>사용 합계</dt><dd>${num(used)}<small>일</small></dd></div>
     <div><dt>초과 사용</dt><dd>${over}<small>명</small></dd></div><div><dt>마지막 반영 기안일</dt><dd class="sm">${last?esc(last.draft.slice(0,10)):'—'}</dd></div></dl>
   </section>
-  <div class="bar"><input id="q" placeholder="이름·사번 검색" value="${esc(S.search)}"><select id="dq"><option value="">전체 부서</option>${depts.map(d=>`<option ${d===S.dept?'selected':''}>${esc(d)}</option>`).join('')}</select>
-  <span class="hint">월차 = 입사 후 매월 발생분 · 이월 = 입사년도 미사용 월차(입사 다음 해 말까지 사용, 수당 제외) · 수당대상 = 미사용 연차 중 월차 제외분</span></div>
-  <div class="tblwrap"><table class="grid dash"><thead><tr><th class="l">이름</th><th class="l">부서</th><th>직급</th><th>입사일</th><th>근속</th><th>이월</th><th>월차</th><th>연차</th><th>조정</th><th>사용가능</th>
-  ${[...Array(12)].map((_,i)=>`<th class="m">${i+1}월</th>`).join('')}<th>사용</th><th>잔여</th><th>수당대상</th></tr></thead><tbody>${body||`<tr><td colspan="25" class="empty">등록된 직원이 없습니다. <b>설정</b>에서 기존 관리대장을 불러오거나 <b>사원 관리</b>에서 등록하세요.</td></tr>`}</tbody></table></div>`;
-  $('#q').oninput=e=>{ S.search=e.target.value; const p=e.target.selectionStart; renderDash(v); const q=$('#q'); q.focus(); q.setSelectionRange(p,p); };
-  $('#dq').onchange=e=>{ S.dept=e.target.value; renderDash(v); };
+  <div class="bar"><input id="q" placeholder="이름·사번 검색" value="${esc(S.search)}" autocomplete="off"><select id="dq"><option value="">전체 부서</option>${depts.map(d=>`<option ${d===S.dept?'selected':''}>${esc(d)}</option>`).join('')}</select>
+  <b id="dashCount" class="cnt"></b><span class="hint">월차 = 입사 후 매월 발생분 · 이월 = 입사년도 미사용 월차(입사 다음 해 말까지 사용, 수당 제외) · 수당대상 = 미사용 연차 중 월차 제외분</span></div>
+  <div class="tblwrap full"><table class="grid dash"><thead><tr><th class="l">이름</th><th class="l">부서</th><th>직급</th><th>입사일</th><th>근속</th><th>이월</th><th>월차</th><th>연차</th><th>조정</th><th>사용가능</th>
+  ${[...Array(12)].map((_,i)=>`<th class="m">${i+1}월</th>`).join('')}<th>사용</th><th>잔여</th><th>수당대상</th></tr></thead><tbody id="dashBody"></tbody></table></div>`;
+  renderDashBody();
+  $('#q').addEventListener('input',e=>{ S.search=e.target.value; renderDashBody(); });
+  $('#dq').onchange=e=>{ S.dept=e.target.value; renderDashBody(); };
 }
 function goPerson(id){ S.person=id; S.tab='person'; render(); }
 
@@ -715,7 +725,7 @@ async function ackAll(){ const L=activeEmps().filter(e=>pendingMonthly(e).length
 function renderEmps(v){
   const list=activeEmps();
   v.innerHTML=`<section><div class="bar"><h2>사원 관리 <small>${list.length}명 재직</small></h2><button class="btn" onclick="empModal(null)">사원 등록</button></div>
-  <div class="tblwrap"><table class="grid list"><thead><tr><th>사번</th><th class="l">이름</th><th class="l">부서</th><th>직급</th><th>입사일</th><th>계산 방식</th><th>${S.year} 조정</th><th>변경 이력</th><th></th></tr></thead><tbody>
+  <div class="tblwrap full"><table class="grid list"><thead><tr><th>사번</th><th class="l">이름</th><th class="l">부서</th><th>직급</th><th>입사일</th><th>계산 방식</th><th>${S.year} 조정</th><th>변경 이력</th><th></th></tr></thead><tbody>
   ${list.map(e=>`<tr><td>${esc(e.no)}</td><td class="l"><b>${esc(e.name)}</b></td><td class="l">${esc(e.dept)}</td><td>${esc(e.rank)}</td><td>${e.hire}</td><td>${isOldRule(e)?'2017.5.29 이전':'현행'}</td>
   <td>${e.adj?.[S.year]?.days?`<span title="${esc(e.adj[S.year].memo||'')}">${num(e.adj[S.year].days)}</span>`:''}</td><td>${(e.history||[]).length||''}</td><td><button class="link" onclick="empModal('${e.id}')">수정</button></td></tr>`).join('')}</tbody></table></div></section>`;
 }
@@ -866,7 +876,7 @@ function exportYear(Y){
       const cells=days.map((d,ci)=>{ const it=map[e.id+'|'+d]||[]; it.forEach(({l,x})=>{ if(l.kind==='annual') x.a<1?c[1]++:c[0]++; else if(l.kind==='special') c[2]+=x.a; else if(l.kind==='official') c[3]+=x.a; else c[4]+=x.a; });
         if(it.length) kindAt[(ri+2)+'|'+(ci+4)]=it[0].l.kind; return it.map(({l,x})=>dayCode(l.kind,x.a)+(l.kind==='annual'&&x.a<1?(x.p==='오전'?'전':'후'):'')).join('/'); });
       return [e.no,e.dept,e.rank,e.name,...cells,...c.map(n=>n||'')]; });
-    const aoa=[[`${Y}년 ${M}월 사원별 근태현황`],head,...data];
+    const aoa=[[`${Y}년 ${M}월 사원별 연차이력`],head,...data];
     const ws=sheet(aoa,(r,c)=>{ if(r===0) return {font:{bold:true,sz:13}}; if(r===1){ const d=days[c-4]; const off=d&&isOff(d,S.hol); return {...hdS,fill:{fgColor:{rgb:off?'8FA6A3':'1E7F76'}}}; }
       const k=kindAt[r+'|'+c]; const d=days[c-4]; const off=d&&isOff(d,S.hol);
       return {...cS,font:k?{bold:true}:{},fill:k?{fgColor:{rgb:KF[k]}}:(off?{fgColor:{rgb:'EEF2F1'}}:undefined)}; },
