@@ -72,6 +72,8 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-variant-num
 .tblwrap.full .grid th{top:var(--hdr,94px)}
 .tblwrap.full .grid thead th:first-child{border-top-left-radius:12px}.tblwrap.full .grid thead th:last-child{border-top-right-radius:12px}
 .cnt{color:var(--deep);font-size:13px}
+.bar .sp{flex:1} .bar .chkl input{min-width:0;width:auto;padding:0;margin:0} .chkl{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub);cursor:pointer}
+.bar h2{margin-right:0}
 .grid td.acts{display:flex;gap:6px;justify-content:flex-end;align-items:center}
 .grid tr.kept td{color:var(--sub)}
 .grid th{background:var(--soft);font-weight:700;font-size:12.5px;color:#34504D;padding:8px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2;white-space:nowrap}
@@ -724,12 +726,31 @@ async function ackAll(){ const L=activeEmps().filter(e=>pendingMonthly(e).length
   busy(true); try{ await commitBatch(ops); toast('모두 반영 완료로 표시했습니다.'); }catch(err){ toast('저장 실패: '+err.message); } busy(false); render(); }
 
 /* ================= 6. 사원 관리 ================= */
+function empFiltered(){
+  const q=(S.empQ||'').trim().toLowerCase();
+  const base=S.empRetired ? empList().slice().sort((a,b)=>(!!a.resign-!!b.resign)||empSort(a,b)) : activeEmps();
+  return base.filter(e=>!q || [e.name,e.no,e.dept,e.rank].some(x=>String(x||'').toLowerCase().includes(q)));
+}
+function renderEmpBody(){
+  const list=empFiltered(), total=S.empRetired?empList().length:activeEmps().length;
+  $('#empBody').innerHTML = list.map(e=>`<tr class="${e.resign?'kept':''}" ondblclick="empModal('${e.id}')"><td>${esc(e.no)}</td><td class="l"><b>${esc(e.name)}</b>${e.resign?` <em class="tag">퇴사 ${e.resign}</em>`:''}</td><td class="l">${esc(e.dept)}</td><td>${esc(e.rank)}</td><td>${e.hire}</td><td>${isOldRule(e)?'2017.5.29 이전':'현행'}</td>
+  <td>${e.adj?.[S.year]?.days?`<span title="${esc(e.adj[S.year].memo||'')}">${num(e.adj[S.year].days)}</span>`:''}</td><td>${(e.history||[]).length||''}</td><td><button class="btn sm ghost" onclick="empModal('${e.id}')">수정</button></td></tr>`).join('')
+    || `<tr><td colspan="9" class="empty">${total?'검색 결과가 없습니다.':'등록된 사원이 없습니다.'}</td></tr>`;
+  $('#empCount').textContent = list.length===total ? `${total}명` : `${list.length} / ${total}명`;
+}
 function renderEmps(v){
-  const list=activeEmps();
-  v.innerHTML=`<section><div class="bar"><h2>사원 관리 <small>${list.length}명 재직</small></h2><button class="btn" onclick="empModal(null)">사원 등록</button></div>
-  <div class="tblwrap full"><table class="grid list"><thead><tr><th>사번</th><th class="l">이름</th><th class="l">부서</th><th>직급</th><th>입사일</th><th>계산 방식</th><th>${S.year} 조정</th><th>변경 이력</th><th></th></tr></thead><tbody>
-  ${list.map(e=>`<tr><td>${esc(e.no)}</td><td class="l"><b>${esc(e.name)}</b></td><td class="l">${esc(e.dept)}</td><td>${esc(e.rank)}</td><td>${e.hire}</td><td>${isOldRule(e)?'2017.5.29 이전':'현행'}</td>
-  <td>${e.adj?.[S.year]?.days?`<span title="${esc(e.adj[S.year].memo||'')}">${num(e.adj[S.year].days)}</span>`:''}</td><td>${(e.history||[]).length||''}</td><td><button class="link" onclick="empModal('${e.id}')">수정</button></td></tr>`).join('')}</tbody></table></div></section>`;
+  v.innerHTML=`<section><div class="bar"><h2>사원 관리 <small>${activeEmps().length}명 재직</small></h2>
+   <input id="eq" placeholder="이름·사번·부서·직급 검색" value="${esc(S.empQ||'')}" autocomplete="off">
+   <label class="chkl"><input type="checkbox" id="eRet" ${S.empRetired?'checked':''}> 퇴사자 포함</label>
+   <b id="empCount" class="cnt"></b><span class="hint">검색 결과가 1명이면 Enter로 바로 수정</span>
+   <span class="sp"></span><button class="btn" onclick="empModal(null)">사원 등록</button></div>
+  <div class="tblwrap full"><table class="grid list"><thead><tr><th>사번</th><th class="l">이름</th><th class="l">부서</th><th>직급</th><th>입사일</th><th>계산 방식</th><th>${S.year} 조정</th><th>변경 이력</th><th></th></tr></thead><tbody id="empBody"></tbody></table></div></section>`;
+  renderEmpBody();
+  const q=$('#eq');
+  q.addEventListener('input',e=>{ S.empQ=e.target.value; renderEmpBody(); });
+  q.addEventListener('keydown',e=>{ if(e.key==='Enter' && !e.isComposing){ const l=empFiltered(); if(l.length===1) empModal(l[0].id); } });
+  $('#eRet').onchange=e=>{ S.empRetired=e.target.checked; renderEmpBody(); };
+  if(S.empQ) { q.focus(); q.setSelectionRange(q.value.length,q.value.length); }
 }
 function empModal(id){
   const e=id?S.emps[id]:{no:'',name:'',dept:'',rank:'',hire:'',resign:''}, Y=S.year;
