@@ -893,15 +893,18 @@ function exportYear(Y){
     for(const a in ws){ if(a[0]==='!') continue; const {r,c}=XLSX.utils.decode_cell(a); ws[a].s=styleFn(r,c,ws[a].v); }
     ws['!cols']=cols; if(merges) ws['!merges']=merges; return ws; }
   // 1) 연차 현황
-  const emps=empList().filter(e=>e.hire&&+e.hire.slice(0,4)<=Y&&(!e.resign||+e.resign.slice(0,4)>=Y)).sort(empSort);
+  // 재직자 먼저, 퇴사자는 하단 (퇴사자 행은 회색 글씨)
+  const retLast=(a,b)=>(!!a.resign-!!b.resign)||empSort(a,b);
+  const retFont={color:{rgb:'8A9C99'}};
+  const emps=empList().filter(e=>e.hire&&+e.hire.slice(0,4)<=Y&&(!e.resign||+e.resign.slice(0,4)>=Y)).sort(retLast);
   const H=['사번','성명','부서','직급','입사일','퇴사일','근속','이월월차','월차','연차','조정','조정사유','사용가능',...[...Array(12)].map((_,i)=>`${i+1}월`),'사용합계','잔여','초과','수당대상'];
   const rows=emps.map(e=>{ const s=summaryOf(e,Y,asOfFor(Y),okLeavesOf(e.id)); return [e.no,e.name,e.dept,e.rank,e.hire,e.resign||'',`${s.N}년차`,s.carry,s.monthly,s.grant,s.adj,e.adj?.[Y]?.memo||'',s.avail,...s.months,s.used,Math.max(0,s.remain),Math.max(0,-s.remain),s.payRemain]; });
   const a1=[[`${Y}년 사원별 연차휴가 관리대장 (회계일 기준) — 기준일 ${asOfFor(Y)}`],H,...rows];
-  XLSX.utils.book_append_sheet(wb,sheet(a1,(r,c)=>r===0?{font:{bold:true,sz:14}}:r===1?hdS:(c===1||c===2||c===11?lS:cS),
+  XLSX.utils.book_append_sheet(wb,sheet(a1,(r,c)=>r===0?{font:{bold:true,sz:14}}:r===1?hdS:{...(c===1||c===2||c===11?lS:cS),...(emps[r-2]?.resign?{font:retFont}:{})},
     H.map((h,i)=>({wch:i===11?16:i===1||i===2?10:i>=13&&i<=24?5:8})),[{s:{r:0,c:0},e:{r:0,c:10}}]),'연차현황');
   // 2) 월별 근태
   for(let M=1;M<=lastM;M++){
-    const {days,emps:me,map}=monthCells(Y,M);
+    const {days,emps:me0,map}=monthCells(Y,M); const me=me0.slice().sort(retLast);
     const head=['사번','부서','직급','이름',...days.map(d=>`${+d.slice(8)}(${'일월화수목금토'[dow(d)]})`),'연차','반차','특별','공가','기타'];
     const kindAt={}; const data=me.map((e,ri)=>{ const c=[0,0,0,0,0];
       const cells=days.map((d,ci)=>{ const it=map[e.id+'|'+d]||[]; it.forEach(({l,x})=>{ if(l.kind==='annual') x.a<1?c[1]++:c[0]++; else if(l.kind==='special') c[2]+=x.a; else if(l.kind==='official') c[3]+=x.a; else c[4]+=x.a; });
@@ -910,7 +913,7 @@ function exportYear(Y){
     const aoa=[[`${Y}년 ${M}월 사원별 연차이력`],head,...data];
     const ws=sheet(aoa,(r,c)=>{ if(r===0) return {font:{bold:true,sz:13}}; if(r===1){ const d=days[c-4]; const off=d&&isOff(d,S.hol); return {...hdS,fill:{fgColor:{rgb:off?'8FA6A3':'1E7F76'}}}; }
       const k=kindAt[r+'|'+c]; const d=days[c-4]; const off=d&&isOff(d,S.hol);
-      return {...cS,font:k?{bold:true}:{},fill:k?{fgColor:{rgb:KF[k]}}:(off?{fgColor:{rgb:'EEF2F1'}}:undefined)}; },
+      return {...cS,font:k?{bold:true}:(me[r-2]?.resign?retFont:{}),fill:k?{fgColor:{rgb:KF[k]}}:(off?{fgColor:{rgb:'EEF2F1'}}:undefined)}; },
       head.map((h,i)=>({wch:i<4?(i===3?8:9):i>=head.length-5?5:4.2})),[{s:{r:0,c:0},e:{r:0,c:10}}]);
     XLSX.utils.book_append_sheet(wb,ws,`${M}월`);
   }
