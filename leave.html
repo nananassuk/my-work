@@ -74,6 +74,10 @@ table.grid{border-collapse:separate;border-spacing:0;width:100%;font-variant-num
 .cnt{color:var(--deep);font-size:13px}
 .bar .sp{flex:1} .bar .chkl input{min-width:0;width:auto;padding:0;margin:0} .chkl{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--sub);cursor:pointer}
 .bar h2{margin-right:0}
+.pend{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:4px;border-radius:50%;border:0;background:var(--gold);color:var(--ink);font-size:11px;font-weight:800;cursor:pointer;vertical-align:1px;padding:0}
+.pend:hover{background:#C2AA3B}
+.pendbox{cursor:pointer;border-color:var(--gold)!important;background:var(--goldbg)!important}
+.info{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--soft);color:var(--sub);font-size:10px;font-weight:800;font-style:italic;cursor:help}
 .grid td.acts{display:flex;gap:6px;justify-content:flex-end;align-items:center}
 .grid tr.kept td{color:var(--sub)}
 .grid th{background:var(--soft);font-weight:700;font-size:12.5px;color:#34504D;padding:8px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2;white-space:nowrap}
@@ -497,10 +501,13 @@ function render(){ setHdr();
 }
 
 /* ================= 1. 연차 현황 ================= */
+function pendIcon(e){ if(S.year!==+todayStr().slice(0,4)) return ''; const p=pendingMonthly(e); if(!p.length) return '';
+  const tip=`그룹웨어 미반영 월차 ${p.length}개 존재\n발생일: ${p.map(md).join(', ')}\n그룹웨어에 반영 후 '월차 반영 체크'에서 반영 완료를 눌러주세요`;
+  return `<button class="pend" title="${esc(tip)}" aria-label="미반영 월차 ${p.length}개" onclick="S.tab='ack';render()">${p.length}</button>`; }
 function dashRow(e){ const Y=S.year, s=sumOf(e);
   return `<tr><td class="l"><a href="#" onclick="goPerson('${e.id}');return false">${esc(e.name)}</a><small>${esc(e.no)}</small></td><td class="l">${esc(e.dept)}</td><td>${esc(e.rank)}</td>
     <td>${e.hire}</td><td>${s.N}년차${s.old?'<sup title="2017.5.29 이전 입사자 계산방식">舊</sup>':''}</td>
-    <td>${s.carry?num(s.carry):''}</td><td>${s.monthly?num(s.monthly):''}</td><td>${s.grant?num(s.grant):''}</td>
+    <td>${s.carry?num(s.carry):''}</td><td>${s.monthly?num(s.monthly):''}${pendIcon(e)}</td><td>${s.grant?num(s.grant):''}</td>
     <td>${s.adj?`<span class="adj" title="${esc(e.adj?.[Y]?.memo||'')}">${s.adj>0?'+':''}${num(s.adj)}</span>`:''}</td>
     <td class="b">${num(s.avail)}</td>${s.months.map(m=>`<td class="m">${m?num(m):''}</td>`).join('')}
     <td class="b">${num(s.used)}</td><td class="b ${s.remain<0?'neg':''}">${s.remain<0?'초과 '+num(-s.remain):num(s.remain)}</td><td>${num(s.payRemain)}</td></tr>`; }
@@ -514,13 +521,14 @@ function renderDashBody(){
 function renderDash(v){
   const Y=S.year, rows=dashRowsAll();
   const depts=[...new Set(rows.map(e=>e.dept))].sort();
+  const pendN=Y===+todayStr().slice(0,4)?rows.filter(e=>pendingMonthly(e).length).length:0;
   let used=0, over=0; rows.forEach(e=>{ const s=sumOf(e); used+=s.used; if(s.remain<0) over++; });
   const last=lastUploads(1)[0];
   v.innerHTML=`
   <section class="hero">
     <div><h2>${Y}년 연차 현황</h2><p>회계일(1/1) 기준 · 기준일 ${asOfFor(Y)}</p></div>
     <dl class="stats"><div><dt>재직 인원</dt><dd>${rows.length}</dd></div><div><dt>사용 합계</dt><dd>${num(used)}<small>일</small></dd></div>
-    <div><dt>초과 사용</dt><dd>${over}<small>명</small></dd></div><div><dt>마지막 반영 기안일</dt><dd class="sm">${last?esc(last.draft.slice(0,10)):'—'}</dd></div></dl>
+    <div><dt>초과 사용</dt><dd>${over}<small>명</small></dd></div><div class="${pendN?'pendbox':''}" ${pendN?`onclick="S.tab='ack';render()" title="월차 반영 체크로 이동"`:''}><dt>월차 미반영</dt><dd>${pendN}<small>명</small></dd></div><div><dt>마지막 반영 기안일</dt><dd class="sm">${last?esc(last.draft.slice(0,10)):'—'}</dd></div></dl>
   </section>
   <div class="bar"><input id="q" placeholder="이름·사번 검색" value="${esc(S.search)}" autocomplete="off"><select id="dq"><option value="">전체 부서</option>${depts.map(d=>`<option ${d===S.dept?'selected':''}>${esc(d)}</option>`).join('')}</select>
   <b id="dashCount" class="cnt"></b><span class="hint">월차 = 입사 후 매월 발생분 · 이월 = 입사년도 미사용 월차(입사 다음 해 말까지 사용, 수당 제외) · 수당대상 = 미사용 연차 중 월차 제외분</span></div>
@@ -707,15 +715,24 @@ async function commitUpload(){
 /* ================= 5. 월차 반영 체크 ================= */
 // 기준: 마지막 '반영 완료' 이후 발생분. 반영 이력이 없으면 시스템 등록일 이후 발생분부터 집계
 function pendingMonthly(e){ if(e.resign) return []; const t=todayStr(), th=e.ack?.through||(e.createdAt||'').slice(0,10); return monthlyDates(e).filter(d=>d<=t && d>th); }
+function ackInfo(e){ const t=todayStr(), all=monthlyDates(e).filter(d=>d<=t), p=pendingMonthly(e);
+  return { all, p, done:all.length-p.length, next:monthlyDates(e).find(d=>d>t)||'' }; }
+function ackLogTip(e){ const L=(e.ack?.log||[]).slice().reverse();
+  return L.length ? '반영 이력\n'+L.map(x=>`${x.at.slice(0,10)} : ${x.count}개 반영 (발생일 ${x.through}까지)`).join('\n') : '시스템 등록 시점까지 발생분은 반영된 것으로 봄'; }
+const md = d => d.slice(5).replace('-','/');
 function renderAck(v){
-  const list=activeEmps().map(e=>({e,p:pendingMonthly(e),all:monthlyDates(e).filter(d=>d<=todayStr())})).filter(x=>x.all.length && x.all.length<11 || x.p.length);
+  const list=activeEmps().map(e=>({e,...ackInfo(e)})).filter(x=>x.all.length && x.all.length<11 || x.p.length);
   const pend=list.filter(x=>x.p.length), done=list.filter(x=>!x.p.length);
-  v.innerHTML=`<section class="ack"><header class="bar"><div><h2>월차 반영 체크</h2><p class="muted">그룹웨어에 반영하지 않은 월차가 누적돼서 보여요. 반영한 뒤 <b>반영 완료</b>를 누르세요.</p></div>
+  const lastCell = e => `<td class="muted small" title="${esc(ackLogTip(e))}">${e.ack?.at?e.ack.at.slice(0,10):'등록 시점'} <span class="info">i</span></td>`;
+  v.innerHTML=`<section class="ack"><header class="bar"><div><h2>월차 반영 체크</h2><p class="muted">그룹웨어에 반영하지 않은 월차가 누적돼서 보여요. 반영한 뒤 <b>반영 완료</b>를 누르세요.<br>
+   <b>그룹웨어 반영</b> 숫자가 지금 그룹웨어에 들어가 있어야 할 월차 개수예요. 그룹웨어 쪽이 더 많다면 반영해 놓고 버튼만 안 누른 경우예요.</p></div>
    ${pend.length?`<button class="btn ghost" onclick="ackAll()">표시된 ${pend.length}명 모두 반영 완료</button>`:''}</header>
-   ${pend.length?`<table class="grid list"><thead><tr><th class="l">이름</th><th class="l">부서</th><th>입사일</th><th>누적 월차</th><th class="l">미반영 발생일</th><th>미반영</th><th></th></tr></thead><tbody>
-   ${pend.map(({e,p,all})=>`<tr><td class="l"><b>${esc(e.name)}</b></td><td class="l">${esc(e.dept)}</td><td>${e.hire}</td><td>${all.length} / 11</td><td class="l">${p.map(d=>`<span class="pill">${d.slice(5).replace('-','/')}</span>`).join('')}</td>
-   <td class="b big">+${p.length}</td><td><button class="btn sm" onclick="ackOne('${e.id}')">반영 완료</button></td></tr>`).join('')}</tbody></table>`:'<p class="empty ok">미반영 월차가 없습니다.</p>'}
-   ${done.length?`<h3>월차 발생 중 · 반영 완료 <small>${done.length}명</small></h3><table class="grid list"><tbody>${done.map(({e,all})=>`<tr><td class="l">${esc(e.name)}</td><td class="l">${esc(e.dept)}</td><td>${all.length} / 11</td><td class="muted">${e.ack?.at?('마지막 반영 '+e.ack.at.slice(0,10)):''}</td><td>다음 발생 ${monthlyDates(e).find(d=>d>todayStr())||'—'}</td></tr>`).join('')}</tbody></table>`:''}
+   ${pend.length?`<table class="grid list"><thead><tr><th class="l">이름</th><th class="l">부서</th><th>입사일</th><th>발생 월차</th><th>그룹웨어 반영</th><th class="l">미반영 발생일</th><th>미반영</th><th>반영 후 합계</th><th>마지막 반영</th><th></th></tr></thead><tbody>
+   ${pend.map(({e,p,all,done})=>`<tr><td class="l"><b>${esc(e.name)}</b></td><td class="l">${esc(e.dept)}</td><td>${e.hire}</td><td>${all.length} / 11</td>
+   <td class="b">${done}개</td><td class="l">${p.map(d=>`<span class="pill">${md(d)}</span>`).join('')}</td>
+   <td class="b big">+${p.length}</td><td class="b">${all.length}개</td>${lastCell(e)}<td><button class="btn sm" onclick="ackOne('${e.id}')">반영 완료</button></td></tr>`).join('')}</tbody></table>`:'<p class="empty ok">미반영 월차가 없습니다.</p>'}
+   ${done.length?`<h3>월차 발생 중 · 반영 완료 <small>${done.length}명</small></h3><table class="grid list"><thead><tr><th class="l">이름</th><th class="l">부서</th><th>입사일</th><th>발생 월차</th><th>그룹웨어 반영</th><th>마지막 반영</th><th>다음 발생</th></tr></thead><tbody>
+   ${done.map(({e,all,done,next})=>`<tr><td class="l">${esc(e.name)}</td><td class="l">${esc(e.dept)}</td><td>${e.hire}</td><td>${all.length} / 11</td><td class="b">${done}개</td>${lastCell(e)}<td>${next||'—'}</td></tr>`).join('')}</tbody></table>`:''}
   </section>`;
 }
 async function ackOne(id){ const e=S.emps[id], p=pendingMonthly(e); if(!p.length) return;
